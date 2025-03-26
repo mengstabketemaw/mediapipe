@@ -29,9 +29,14 @@
 #include "mediapipe/framework/port/status.h"
 #include "mediapipe/util/resource_util.h"
 
+#include <iostream>
+#include "mediapipe/framework/formats/landmark.pb.h" // Make sure this is included
+#include "mediapipe/framework/formats/detection.pb.h" // You might need this
+
 constexpr char kInputStream[] = "input_video";
 constexpr char kOutputStream[] = "output_video";
 constexpr char kWindowName[] = "MediaPipe";
+constexpr char kLandmarkOutputStream[] = "multi_face_landmarks";
 
 ABSL_FLAG(std::string, calculator_graph_config_file, "",
           "Name of file containing text format CalculatorGraphConfig proto.");
@@ -81,6 +86,8 @@ absl::Status RunMPPGraph() {
   ABSL_LOG(INFO) << "Start running the calculator graph.";
   MP_ASSIGN_OR_RETURN(mediapipe::OutputStreamPoller poller,
                       graph.AddOutputStreamPoller(kOutputStream));
+  MP_ASSIGN_OR_RETURN(mediapipe::OutputStreamPoller landmark_poller, // Poller for face landmarks
+                      graph.AddOutputStreamPoller(kLandmarkOutputStream));
   MP_RETURN_IF_ERROR(graph.StartRun({}));
 
   ABSL_LOG(INFO) << "Start grabbing and processing frames.";
@@ -139,6 +146,30 @@ absl::Status RunMPPGraph() {
       // Press any key to exit.
       const int pressed_key = cv::waitKey(5);
       if (pressed_key >= 0 && pressed_key != 255) grab_frames = false;
+    }
+
+mediapipe::Packet landmark_packet;
+    if (landmark_poller.Next(&landmark_packet)) {
+      // A packet was successfully retrieved, process the landmarks
+      const auto& multi_face_landmarks =
+          landmark_packet.Get<std::vector<mediapipe::NormalizedLandmarkList>>();
+
+      std::cout << "--- Face Landmarks ---\n";
+      for (const auto& face_landmarks : multi_face_landmarks) {
+        std::cout << "  Face detected:\n";
+        for (int i = 0; i < face_landmarks.landmark_size(); ++i) {
+          const auto& landmark = face_landmarks.landmark(i);
+          std::cout << "    Landmark " << i << ": x=" << landmark.x()
+                    << ", y=" << landmark.y() << ", z=" << landmark.z() << "\n";
+        }
+      }
+      if (multi_face_landmarks.empty()) {
+        std::cout << "  No faces detected in this frame.\n";
+      }
+    } else {
+      // No landmark packet was available at this time
+      // You can choose to do something else here, or just continue to the next frame
+      // std::cout << "No landmark packet received in this frame.\n";
     }
   }
 
